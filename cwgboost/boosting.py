@@ -11,19 +11,25 @@ class CWGBoost:
         self.penalty_order = penalty_order
         self.lambda_penalty = lambda_penalty
 
-    def fit(self, x, y):
+    def fit(self, x, y, x_val=None, y_val=None, early_stopping_rounds=None, verbose=False):
         self.models = []
         self.mean_ = np.mean(y)
         
         f = np.full(len(y), self.mean_)
         
-        for _ in range(self.num_steps):
+        validation_loss = np.zeros(self.num_steps)
+        
+        for step_i in range(self.num_steps):
             residuals = y - f
 
             best_base_learner = None
             best_loss = np.mean(residuals ** 2)
             best_pred_base_learner = None
             best_feature = None
+            
+            if verbose and (step_i + 1) % 10 == 0:
+                print(f"Step {step_i + 1}/{self.num_steps}")
+            
             # Iterate over each feature
             for i in range(x.shape[1]):
                 # Fit a regression tree to the residuals
@@ -40,9 +46,29 @@ class CWGBoost:
             
             self.models.append({'feature': best_feature, 'model': best_base_learner})
             f += self.learning_rate * best_pred_base_learner
+            # Check early stopping
+            if early_stopping_rounds is not None:
+                validation_loss[step_i] = np.mean((y_val - self.predict(x_val))**2)
+                if step_i > early_stopping_rounds:
+                    # if the last early_stopping_rounds validation losses are higher than the previous ones, stop
+                    if np.all(validation_loss[step_i - early_stopping_rounds:] > validation_loss[step_i - early_stopping_rounds - 1]):
+                        break
 
     def predict(self, x):
         f =  np.full(x.shape[0], self.mean_)
         for model in self.models:
             f += self.learning_rate * model['model'].predict(x[:, model['feature']])
         return f
+    
+    def feature_importance(self, x, y):
+        baseline_mse = np.mean((y - self.predict(x))**2)
+        
+        importance = {}
+        for feature in range(x.shape[1]):
+            f =  np.full(x.shape[0], self.mean_)
+            for model in self.models:
+                if model['feature'] != feature:
+                    f += self.learning_rate * model['model'].predict(x[:, model['feature']])
+            importance[feature] =  (np.mean((y - f)**2) - baseline_mse)/baseline_mse
+            
+        return importance
