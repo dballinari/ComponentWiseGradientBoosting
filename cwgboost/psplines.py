@@ -24,25 +24,17 @@ def difference_matrix(n_bases, order=2):
     return D
 
 class PSpline:
-    def __init__(self, degree=3, n_knots=20, penalty_order=2, lambda_penalty=1):
-        self.degree = degree
-        self.n_knots = n_knots
+    def __init__(self, penalty_order=2, lambda_penalty=1):
         self.penalty_order = penalty_order
         self.lambda_penalty = lambda_penalty
 
-    def fit(self, x, y):
-        x_min, x_max = np.min(x), np.max(x)
-        knots = np.linspace(x_min, x_max, self.n_knots)
-        knots = np.concatenate((np.full(self.degree, x_min), knots, np.full(self.degree, x_max)))
-
-        B = create_b_spline_basis(x, knots, self.degree)
+    def fit(self, B, y):
         D = difference_matrix(B.shape[1], order=self.penalty_order)
         P = self.lambda_penalty * (D.T @ D)
 
         BtB = B.T @ B
         Bty = B.T @ y
         self.coeff_ = solve(BtB + P, Bty)
-        self.knots_ = knots
 
-    def predict(self, x):
-        return create_b_spline_basis(x, self.knots_, self.degree) @ self.coeff_
+    def predict(self, B):
+        return B @ self.coeff_
