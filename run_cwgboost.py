@@ -13,8 +13,9 @@ if __name__ == "__main__":
     y_val = np.sin(np.minimum(x_val[:, 1],0)) * np.sin(np.maximum(x_val[:, 0],0)) + np.random.normal(0, 0.2, len(x))
     
     # Fit CWGBoost
-    model = CWGBoost(learning_rate=0.1, num_steps=5000, degree=3, n_knots=20, penalty_order=2, lambda_penalty=10)
+    model = CWGBoost(learning_rate=0.1, num_steps=1000, degree=3, n_knots=20, penalty_order=2, lambda_penalty=100)
     model.fit(x, y, verbose=True, x_val=x_val, y_val=y_val, early_stopping_rounds=5)
+    print(model.feature_importance(x, y))
     
     x_test = np.random.uniform(-4, 4, (100, 10))
     y_test = np.sin(np.minimum(x_test[:, 1],0)) * np.sin(np.maximum(x_test[:, 0],0)) + np.random.normal(0, 0.2, len(x))

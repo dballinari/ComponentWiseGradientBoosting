@@ -83,14 +83,16 @@ class CWGBoost:
         return f
     
     def feature_importance(self, x, y):
-        baseline_mse = np.mean((y - self.predict(x))**2)
-        
+       
+        basis = create_b_spline_basis(x, self.knots, self.degree)
+        baseline_mse = np.mean((y - self._predict_from_basis(basis))**2)
+          
         importance = {}
         for feature in range(x.shape[1]):
             f =  np.full(x.shape[0], self.mean_)
             for model in self.models:
                 if model['feature'] != feature:
-                    f += self.learning_rate * model['model'].predict(x[:, model['feature']])
+                    f += self.learning_rate * model['model'].predict(basis[:, :, model['feature']])
             importance[feature] =  (np.mean((y - f)**2) - baseline_mse)/baseline_mse
             
         return importance
