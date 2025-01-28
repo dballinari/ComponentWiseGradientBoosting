@@ -1,6 +1,5 @@
 import numpy as np
 from .psplines import PSpline
-from .treestump import TreeStump
 from .basis import create_b_spline_basis
 from enum import Enum
 from sklearn.tree import DecisionTreeRegressor
