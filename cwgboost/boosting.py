@@ -1,22 +1,36 @@
 import numpy as np
 from .psplines import PSpline
+from .treestump import TreeStump
 from .basis import create_b_spline_basis
+from enum import Enum
+from sklearn.tree import DecisionTreeRegressor
+
+class BaseLearner(Enum):
+    PSPLINE = 1
+    TREESTUMP = 2
+    ALL = 3
 
 
 class CWGBoost:
-    def __init__(self, learning_rate: float=0.1, num_steps: int=100, degree: int=3, n_knots: int=20, penalty_order: int=2, df: int=1):
+    def __init__(self, learning_rate: float=0.1, num_steps: int=100, base_learner: BaseLearner=BaseLearner.PSPLINE, degree: int=3, n_knots: int=20, penalty_order: int=2, df: int=4):
         self.learning_rate = learning_rate
         self.num_steps = num_steps
         self.degree = degree
         self.n_knots = n_knots
         self.penalty_order = penalty_order
         self.df = df
+        self.base_learner = base_learner
 
     def fit(self, x, y, x_val=None, y_val=None, early_stopping_rounds=None, verbose=False):
         self._fit_knots(x)
-        basis = create_b_spline_basis(x, self.knots, self.degree)
-        if x_val is not None:
-            basis_val = create_b_spline_basis(x_val, self.knots, self.degree)
+        if self.base_learner == BaseLearner.PSPLINE:
+            basis = create_b_spline_basis(x, self.knots, self.degree)
+            if x_val is not None:
+                basis_val = create_b_spline_basis(x_val, self.knots, self.degree)
+        else:
+            basis = x.reshape(-1, 1, x.shape[1])
+            if x_val is not None:
+                basis_val = x_val.reshape(-1, 1, x_val.shape[1])
             
         # lambda penalty is determined as a function of the degrees of freedom, we or each feature we
         # store this penalty term such that it has not to be recomputed at each iteration
@@ -45,12 +59,18 @@ class CWGBoost:
             
             # Iterate over each feature
             for i in range(x.shape[1]):
-                # Fit a P-Spline to the residuals: at first iteration, the lambda penalty is None and will be computed based on the degrees of freedom
-                base_learner = PSpline(penalty_order=self.penalty_order, df=self.df, lambda_penalty=lambda_penalties[i])
-                base_learner.fit(basis[:, :, i], residuals)
+                if self.base_learner == BaseLearner.TREESTUMP:
+                    base_learner = DecisionTreeRegressor(max_depth=1)
+                    base_learner = base_learner.fit(basis[:, :, i], residuals)
+                elif self.base_learner == BaseLearner.PSPLINE:
+                    # Fit a P-Spline to the residuals: at first iteration, the lambda penalty is None and will be computed based on the degrees of freedom
+                    base_learner = PSpline(penalty_order=self.penalty_order, df=self.df, lambda_penalty=lambda_penalties[i])
+                    base_learner.fit(basis[:, :, i], residuals)
+                    # store the lambda penalty for the next iteration
+                    lambda_penalties[i] = base_learner.lambda_penalty
+                else:
+                    raise ValueError("Invalid base learner")
                 pred_base_learner = base_learner.predict(basis[:, :, i])
-                # store the lambda penalty for the next iteration
-                lambda_penalties[i] = base_learner.lambda_penalty
                 # Check if base learner is better than the current best
                 loss_base_learner = np.mean((y - (f + self.learning_rate * pred_base_learner))**2)
                 if loss_base_learner < best_loss:
@@ -82,7 +102,10 @@ class CWGBoost:
         self.knots = np.concatenate((np.full((self.degree, x.shape[1]), x_min), knots, np.full((self.degree, x.shape[1]), x_max)))
 
     def predict(self, x):
-        basis = create_b_spline_basis(x, self.knots, self.degree)
+        if self.base_learner == BaseLearner.PSPLINE:
+            basis = create_b_spline_basis(x, self.knots, self.degree)
+        else:
+            basis = x.reshape(-1, 1, x.shape[1])
         return self._predict_from_basis(basis)
     
     def _predict_from_basis(self, basis):
@@ -93,7 +116,10 @@ class CWGBoost:
     
     def feature_importance(self, x, y):
        
-        basis = create_b_spline_basis(x, self.knots, self.degree)
+        if self.base_learner == BaseLearner.PSPLINE:
+            basis = create_b_spline_basis(x, self.knots, self.degree)
+        else:
+            basis = x.reshape(-1, 1, x.shape[1])
         baseline_mse = np.mean((y - self._predict_from_basis(basis))**2)
           
         importance = {}

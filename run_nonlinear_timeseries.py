@@ -1,5 +1,6 @@
 import numpy as np
-
+from sklearn.linear_model import LinearRegression
+from cwgboost.boosting import CWGBoost, BaseLearner
 
 def regime_switching_ar1(n: int):
     brun_in = 1000
@@ -28,12 +29,25 @@ print(x_train.shape, y_train.shape)
 x_valid, y_valid = prepare_date_for_regression(y[4010:5000])
 x_test, y_test = prepare_date_for_regression(y[5010:6000])
 
-from cwgboost.boosting import CWGBoost
-model = CWGBoost(learning_rate=0.1, num_steps=1000, degree=3, n_knots=20, penalty_order=2, df=4)
+
+model = CWGBoost(learning_rate=0.1, num_steps=1000, base_learner=BaseLearner.PSPLINE, degree=2, n_knots=20, penalty_order=2, df=4)
 model.fit(x_train, y_train, verbose=True, x_val=x_valid, y_val=y_valid, early_stopping_rounds=20)
 print(model.feature_importance(x_train, y_train))
 
 result = model.predict(x_test)
 print(((result - y_test)**2).mean()/np.var(y_test))
 
+
+model = CWGBoost(learning_rate=0.1, num_steps=1000, base_learner=BaseLearner.TREESTUMP)
+model.fit(x_train, y_train, verbose=True, x_val=x_valid, y_val=y_valid, early_stopping_rounds=20)
+print(model.feature_importance(x_train, y_train))
+
+result = model.predict(x_test)
+print(((result - y_test)**2).mean()/np.var(y_test))
+
+# compare to AR(1) model
+model = LinearRegression()
+model.fit(x_train[:,[0]], y_train)
+result = model.predict(x_test[:,[0]])
+print(((result - y_test)**2).mean()/np.var(y_test))
 

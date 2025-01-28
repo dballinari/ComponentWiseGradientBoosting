@@ -42,7 +42,7 @@ class PSpline:
         if self.lambda_penalty is None:
             Qb =  sqrtm(np.linalg.inv(BtB))
             L = Qb @ DtD @ Qb
-            self.lambda_penalty = bisect(lambda x: np.linalg.trace( np.linalg.inv(np.eye(L.shape[0])+x * L) ) - self.df, 0, 1e11)
+            self.lambda_penalty = bisect(lambda x: np.linalg.trace( np.linalg.inv(np.eye(L.shape[0])+x * L) ) - self.df, 0, 1e15)
         
         P = self.lambda_penalty * DtD
         self.coeff_ = solve(BtB + P, Bty)
