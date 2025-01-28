@@ -4,19 +4,23 @@ from .basis import create_b_spline_basis
 
 
 class CWGBoost:
-    def __init__(self, learning_rate=0.1, num_steps=100, degree=3, n_knots=20, penalty_order=2, lambda_penalty=1):
+    def __init__(self, learning_rate: float=0.1, num_steps: int=100, degree: int=3, n_knots: int=20, penalty_order: int=2, df: int=1):
         self.learning_rate = learning_rate
         self.num_steps = num_steps
         self.degree = degree
         self.n_knots = n_knots
         self.penalty_order = penalty_order
-        self.lambda_penalty = lambda_penalty
+        self.df = df
 
     def fit(self, x, y, x_val=None, y_val=None, early_stopping_rounds=None, verbose=False):
         self._fit_knots(x)
         basis = create_b_spline_basis(x, self.knots, self.degree)
         if x_val is not None:
             basis_val = create_b_spline_basis(x_val, self.knots, self.degree)
+            
+        # lambda penalty is determined as a function of the degrees of freedom, we or each feature we
+        # store this penalty term such that it has not to be recomputed at each iteration
+        lambda_penalties = [None] * x.shape[1]
         
         self.mean_ = np.mean(y)
         
@@ -28,6 +32,7 @@ class CWGBoost:
         validation_loss = np.zeros(self.num_steps)
         
         for step_i in range(self.num_steps):
+            # only implements the squared loss where the gradient is the residual
             residuals = y - f
 
             best_base_learner = None
@@ -40,10 +45,12 @@ class CWGBoost:
             
             # Iterate over each feature
             for i in range(x.shape[1]):
-                # Fit a P-Spline to the residuals
-                base_learner = PSpline(penalty_order=self.penalty_order, lambda_penalty=self.lambda_penalty)
+                # Fit a P-Spline to the residuals: at first iteration, the lambda penalty is None and will be computed based on the degrees of freedom
+                base_learner = PSpline(penalty_order=self.penalty_order, df=self.df, lambda_penalty=lambda_penalties[i])
                 base_learner.fit(basis[:, :, i], residuals)
                 pred_base_learner = base_learner.predict(basis[:, :, i])
+                # store the lambda penalty for the next iteration
+                lambda_penalties[i] = base_learner.lambda_penalty
                 # Check if base learner is better than the current best
                 loss_base_learner = np.mean((y - (f + self.learning_rate * pred_base_learner))**2)
                 if loss_base_learner < best_loss:
@@ -64,6 +71,8 @@ class CWGBoost:
                 if step_i > early_stopping_rounds:
                     # if the last early_stopping_rounds validation losses are higher than the previous ones, stop
                     if np.all(validation_loss[step_i - early_stopping_rounds:step_i] > validation_loss[step_i - early_stopping_rounds - 1]):
+                        # remove the last models that did not improve the validation loss
+                        self.models = self.models[:(step_i - early_stopping_rounds)]
                         break
     
                     
